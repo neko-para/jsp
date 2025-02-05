@@ -1,0 +1,21 @@
+BasedOnStyle: Chromium
+Language: Cpp
+Standard: c++20
+
+UseTab: Never
+TabWidth: 4
+IndentWidth: 4
+ColumnLimit: 120
+PointerAlignment: Left
+BreakConstructorInitializers: BeforeComma
+BreakBeforeBinaryOperators: NonAssignment
+AccessModifierOffset: -4
+AllowShortIfStatementsOnASingleLine: false
+AllowShortLambdasOnASingleLine: Empty
+BreakBeforeBraces: Custom
+BraceWrapping:
+  BeforeElse: false
+SpacesInLineCommentPrefix:
+  Minimum: 1
+  Maximum: -1
+LambdaBodyIndentation: OuterScope
