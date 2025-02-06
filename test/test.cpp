@@ -1,6 +1,7 @@
 #include "jsp.h"
 
 #include <iostream>
+#include <tuple>
 
 void test1() {
     jsp::Promise<> p1;
@@ -14,28 +15,26 @@ void test1() {
     p2.then([](const int& i) {
         std::cout << i << std::endl;
     });
-
-    jsp::Promise<int, double> p3;
-    p3.then([](const int& i, const double& d) {
-        return i + d;
-    }).then([](const double& d) {
-        std::cout << d << std::endl;
-    });
-    p3.resolve(111, 222.333);
 }
 
-jsp::Promise<> test2() {
-    co_return;
+jsp::Promise<int> test2() {
+    co_return 1;
 }
 
-jsp::Promise<int> test3() {
+jsp::Promise<int, std::string> test3() {
+    co_return std::make_tuple(1, "123");
+}
+
+jsp::Promise<int> test4() {
+    std::cout << co_await test2() << std::endl;
+    auto [i, d] = co_await test3();
+    std::cout << i << ' ' << d << std::endl;
     co_return 2;
 }
 
 int main() {
     test1();
-    test2();
-    test3().then([](const int& i) {
+    test4().then([](const int& i) {
         std::cout << i << std::endl;
     });
 
