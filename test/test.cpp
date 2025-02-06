@@ -21,6 +21,10 @@ jsp::Promise<int> test2() {
     co_return 1;
 }
 
+jsp::Promise<int> testp() {
+    co_return test2();
+}
+
 jsp::Promise<int, std::string> test3() {
     co_return std::make_tuple(1, "123");
 }

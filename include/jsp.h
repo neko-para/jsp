@@ -111,10 +111,24 @@ public:
         if (context_->data.has_value()) {
             return;
         }
-        context_->data = std::make_tuple<Type...>(std::forward<Args>(data)...);
+        context_->data = std::tuple<Type...>(std::forward<Args>(data)...);
         for (auto func : context_->thens) {
             impl::flat_invoke(func, context_->data.value());
         }
+    }
+
+    template <typename... Args>
+    void resolve(Promise<Args...> pro) {
+        pro.then([self = *this](const Args&... data) mutable {
+            self.resolve_tuple(std::tuple<Type...>(data...));
+        });
+    }
+
+    template <typename... Args>
+    void resolve(Promise<Promise<Args...>> pro) {
+        pro.then([self = *this](Promise<Args...> pro2) mutable {
+            self.resolve(pro2);
+        });
     }
 
     void resolve_tuple(std::tuple<Type...> data) {
@@ -141,6 +155,33 @@ public:
     impl::CppAwaiter<Type...> operator co_await();
 };
 
+template <typename Type>
+constexpr bool is_promise_v = false;
+
+template <typename... Type>
+constexpr bool is_promise_v<Promise<Type...>> = true;
+
+template <typename Type>
+concept is_promise = is_promise_v<Type>;
+
+namespace impl {
+
+template <typename... Type>
+constexpr bool has_promise_impl() {
+    return (is_promise_v<Type> || ...);
+}
+
+}  // namespace impl
+
+template <typename... Type>
+constexpr bool has_promise_v = impl::has_promise_impl<Type...>();
+
+template <typename... Type>
+    requires(has_promise_v<Type...>)
+class Promise<Type...> {
+    static_assert(false, "Promise shouldn't recursive");
+};
+
 namespace impl {
 
 template <typename... Type>
@@ -160,6 +201,10 @@ struct CppPromise {
         requires(count_v<Type...> == 1)
     {
         promise.resolve(std::move(value));
+    }
+    template <typename... Args>
+    void return_value(Promise<Args...> pro) {
+        promise.resolve(pro);
     }
     void unhandled_exception() { std::rethrow_exception(std::current_exception()); }
 };
