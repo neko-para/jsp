@@ -1,12 +1,11 @@
 #pragma once
 
-#include <concepts>
-#include <utility>
 #if __cplusplus < 202002L
 #error "C++20 is required for coroutine"
 #endif
 
 #include <coroutine>
+#include <exception>
 #include <functional>
 #include <list>
 #include <memory>
@@ -14,16 +13,31 @@
 #include <optional>
 #include <tuple>
 #include <type_traits>
+#include <utility>
 
 namespace jsp {
 
 namespace impl {
 
 template <typename... Type>
+struct CppPromise;
+
+template <typename... Type>
+constexpr size_t count_v = std::tuple_size_v<std::tuple<Type...>>;
+
+template <typename... Type>
 struct Context {
     std::mutex lock;
     std::optional<std::tuple<Type...>> data;
     std::list<std::function<void(const Type&...)>> thens;
+
+    std::coroutine_handle<CppPromise<Type...>> handle;
+
+    ~Context() {
+        if (handle) {
+            handle.destroy();
+        }
+    }
 };
 
 template <typename Func, typename Tuple, size_t... Ids>
@@ -83,7 +97,7 @@ public:
     }
 
     template <typename... Args>
-        requires(std::tuple_size_v<std::tuple<Args...>> == std::tuple_size_v<std::tuple<Type...>>)
+        requires(impl::count_v<Args...> == impl::count_v<Type...>)
     void resolve(Args&&... data) {
         std::unique_lock<std::mutex> lock(context_->lock);
 
@@ -98,6 +112,52 @@ public:
 
 private:
     std::shared_ptr<impl::Context<Type...>> context_;
+
+public:
+    using promise_type = impl::CppPromise<Type...>;
+
+    friend class impl::CppPromise<Type...>;
 };
+
+namespace impl {
+
+template <typename... Type>
+struct CppPromise {
+    Promise<Type...> promise;
+
+    CppPromise() = default;
+
+    Promise<Type...> get_return_object() {
+        promise.context_->handle = std::coroutine_handle<CppPromise<Type...>>::from_promise(*this);
+        return promise;
+    }
+    std::suspend_never initial_suspend() noexcept { return {}; }
+    std::suspend_always final_suspend() noexcept { return {}; }
+    template <typename Value>
+    void return_value(Value&& value)
+        requires(count_v<Type...> == 1)
+    {
+        promise.resolve(std::forward<Value>(value));
+    }
+    void unhandled_exception() { std::rethrow_exception(std::current_exception()); }
+};
+
+template <>
+struct CppPromise<> {
+    Promise<> promise;
+
+    CppPromise() = default;
+
+    Promise<> get_return_object() {
+        promise.context_->handle = std::coroutine_handle<CppPromise<>>::from_promise(*this);
+        return promise;
+    }
+    std::suspend_never initial_suspend() noexcept { return {}; }
+    std::suspend_always final_suspend() noexcept { return {}; }
+    void return_void() { promise.resolve(); }
+    void unhandled_exception() { std::rethrow_exception(std::current_exception()); }
+};
+
+}  // namespace impl
 
 }  // namespace jsp

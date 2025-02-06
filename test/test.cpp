@@ -24,8 +24,20 @@ void test1() {
     p3.resolve(111, 222.333);
 }
 
+jsp::Promise<> test2() {
+    co_return;
+}
+
+jsp::Promise<int> test3() {
+    co_return 2;
+}
+
 int main() {
     test1();
+    test2();
+    test3().then([](const int& i) {
+        std::cout << i << std::endl;
+    });
 
     return 0;
 }
