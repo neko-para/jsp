@@ -40,10 +40,15 @@ void testCb(std::function<void(const int&)> func) {
     func(123321);
 }
 
+void testCbMove(std::function<void(int&&)> func) {
+    func(321123);
+}
 jsp::Promise<int> testCallCb() {
     jsp::Promise<int> result;
+    jsp::Promise<int> result2;
     testCb(result);
-    int val = co_await result;
+    testCbMove(result2);
+    int val = co_await result + co_await result2;
     std::cout << val << std::endl;
     co_return val;
 }

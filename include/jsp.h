@@ -26,7 +26,7 @@ template <typename... Type>
 struct CppAwaiter;
 
 template <typename... Type>
-constexpr size_t count_v = std::tuple_size_v<std::tuple<Type...>>;
+constexpr size_t count_v = sizeof...(Type);
 
 template <typename... Type>
     requires(count_v<Type...> >= 1)
@@ -143,10 +143,21 @@ public:
         }
     }
 
-    operator std::function<void(const Type&...)>() {
-        return [self = *this](const Type&... args) mutable {
+    template <typename... Args>
+        requires(impl::count_v<Args...> == impl::count_v<Type...>)
+    operator std::function<void(const Args&...)>() {
+        return [self = *this](const Args&... args) mutable {
             auto data = std::tuple<Type...>(args...);
-            self.resolve_tuple(data);
+            self.resolve_tuple(std::move(data));
+        };
+    }
+
+    template <typename... Args>
+        requires(impl::count_v<Args...> == impl::count_v<Type...>)
+    operator std::function<void(Args&&...)>() {
+        return [self = *this](Args&&... args) mutable {
+            auto data = std::make_tuple<Type...>(std::forward<Args>(args)...);
+            self.resolve_tuple(std::move(data));
         };
     }
 
