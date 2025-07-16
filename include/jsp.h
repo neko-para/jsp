@@ -150,8 +150,47 @@ public:
         };
     }
 
+    // bool has_value() {
+    //     std::unique_lock<std::mutex> lock(context_->lock);
+
+    //     if (context_->data.has_value()) {
+    //         return true;
+    //     }
+    //     if (!context_->handle || context_->handle.done()) {
+    //         return false;
+    //     }
+    //     context_->handle.resume();
+    //     return context_->data.has_value();
+    // }
+
+    operator bool() { return fulfill(); }
+
+    std::optional<std::tuple<Type...>> take() {
+        fulfill();
+
+        std::unique_lock<std::mutex> lock(context_->lock);
+        auto result = std::move(context_->data);
+        context_->data = std::nullopt;
+        return result;
+    }
+
 private:
     std::shared_ptr<impl::Context<Type...>> context_;
+
+    bool fulfill() {
+        std::unique_lock<std::mutex> lock(context_->lock);
+
+        if (context_->data.has_value()) {
+            return true;
+        }
+
+        if (context_->handle && !context_->handle.done()) {
+            lock.unlock();
+            context_->handle.resume();
+            lock.lock();
+        }
+        return context_->data.has_value();
+    }
 
 public:
     using promise_type = impl::CppPromise<Type...>;
@@ -212,6 +251,16 @@ struct CppPromise {
     template <typename... Args>
     void return_value(Promise<Args...> pro) {
         promise.resolve(pro);
+    }
+    std::suspend_always yield_value(std::tuple<Type...> value) {
+        promise.resolve_tuple(std::move(value));
+        return {};
+    }
+    std::suspend_always yield_value(first_t<Type...>&& value)
+        requires(count_v<Type...> == 1)
+    {
+        promise.resolve(std::move(value));
+        return {};
     }
     void unhandled_exception() { std::rethrow_exception(std::current_exception()); }
 };
