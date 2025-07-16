@@ -143,6 +143,13 @@ public:
         }
     }
 
+    operator std::function<void(const Type&...)>() {
+        return [self = *this](const Type&... args) mutable {
+            auto data = std::tuple<Type...>(args...);
+            self.resolve_tuple(data);
+        };
+    }
+
 private:
     std::shared_ptr<impl::Context<Type...>> context_;
 

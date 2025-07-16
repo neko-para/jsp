@@ -36,11 +36,24 @@ jsp::Promise<int> test4() {
     co_return 2;
 }
 
+void testCb(std::function<void(const int&)> func) {
+    func(123321);
+}
+
+jsp::Promise<int> testCallCb() {
+    jsp::Promise<int> result;
+    testCb(result);
+    int val = co_await result;
+    std::cout << val << std::endl;
+    co_return val;
+}
+
 int main() {
     test1();
     test4().then([](const int& i) {
         std::cout << i << std::endl;
     });
+    testCallCb();
 
     return 0;
 }
