@@ -53,13 +53,13 @@ jsp::Promise<int> testCallCb() {
     co_return val;
 }
 
-jsp::Promise<int> genInts() {
-    co_yield 111;
-    co_yield 222;
-    co_yield 333;
+// jsp::Promise<int> genInts() {
+//     co_yield 111;
+//     co_yield 222;
+//     co_yield 333;
 
-    co_return 999;
-}
+//     co_return 999;
+// }
 
 int main() {
     test1();
@@ -67,12 +67,6 @@ int main() {
         std::cout << i << std::endl;
     });
     testCallCb();
-
-    auto gen = genInts();
-    while (gen) {
-        auto [val] = *gen.take();
-        std::cout << val << std::endl;
-    }
 
     return 0;
 }
