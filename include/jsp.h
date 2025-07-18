@@ -34,7 +34,6 @@ using first_t = std::tuple_element_t<0, std::tuple<Type...>>;
 
 template <typename... Type>
 struct Context {
-    std::mutex lock;
     std::optional<std::tuple<Type...>> data;
     std::list<std::function<void(const Type&...)>> thens;
 
@@ -72,10 +71,8 @@ public:
     template <typename Func>
         requires(!std::is_same_v<std::invoke_result_t<Func, const Type&...>, void>)
     auto then(Func&& func) -> Promise<std::invoke_result_t<Func, const Type&...>> {
-        std::unique_lock<std::mutex> lock(context_->lock);
-
         Promise<std::invoke_result_t<Func, const Type&...>> result;
-        if (context_->data.has_value()) {
+        if (resolved()) {
             result.resolve(impl::flat_invoke(func, context_->data.value()));
         } else {
             context_->thens.push_back([func = std::move(func), result](const Type&... data) mutable {
@@ -88,10 +85,8 @@ public:
     template <typename Func>
         requires(std::is_same_v<std::invoke_result_t<Func, const Type&...>, void>)
     auto then(Func&& func) -> Promise<> {
-        std::unique_lock<std::mutex> lock(context_->lock);
-
         Promise<> result;
-        if (context_->data.has_value()) {
+        if (resolved()) {
             impl::flat_invoke(func, context_->data.value());
             result.resolve();
         } else {
@@ -103,18 +98,12 @@ public:
         return result;
     }
 
-    bool resolved() {
-        std::unique_lock<std::mutex> lock(context_->lock);
-
-        return context_->data.has_value();
-    }
+    bool resolved() { return context_->data.has_value(); }
 
     template <typename... Args>
         requires(impl::count_v<Args...> == impl::count_v<Type...>)
     void resolve(Args&&... data) {
-        std::unique_lock<std::mutex> lock(context_->lock);
-
-        if (context_->data.has_value()) {
+        if (resolved()) {
             return;
         }
         context_->data = std::tuple<Type...>(std::forward<Args>(data)...);
@@ -138,9 +127,7 @@ public:
     }
 
     void resolve_tuple(std::tuple<Type...> data) {
-        std::unique_lock<std::mutex> lock(context_->lock);
-
-        if (context_->data.has_value()) {
+        if (resolved()) {
             return;
         }
         context_->data = std::move(data);
@@ -210,7 +197,16 @@ namespace impl {
 
 template <typename... Type>
 struct CppPromise {
+    struct FinalAwaiter {
+        bool await_ready() noexcept { return false; }
+
+        void await_suspend(std::coroutine_handle<CppPromise<Type...>> h) noexcept { h.promise().final_resolve(); }
+
+        void await_resume() noexcept {}
+    };
+
     Promise<Type...> promise;
+    std::function<void()> final_resolve;
 
     CppPromise() = default;
 
@@ -219,22 +215,38 @@ struct CppPromise {
         return promise;
     }
     std::suspend_never initial_suspend() noexcept { return {}; }
-    std::suspend_always final_suspend() noexcept { return {}; }
-    void return_value(std::tuple<Type...> value) { promise.resolve_tuple(std::move(value)); }
+    FinalAwaiter final_suspend() noexcept { return {}; }
+    void return_value(std::tuple<Type...> value) {
+        final_resolve = [promise = this->promise, value = std::move(value)]() mutable {
+            promise.resolve_tuple(std::move(value));
+        };
+    }
     void return_value(first_t<Type...> value)
         requires(count_v<Type...> == 1)
     {
-        promise.resolve(std::move(value));
+        final_resolve = [promise = this->promise, value = std::move(value)]() mutable {
+            promise.resolve(std::move(value));
+        };
     }
     template <typename... Args>
     void return_value(Promise<Args...> pro) {
-        promise.resolve(pro);
+        final_resolve = [promise = this->promise, pro]() {
+            promise.resolve(pro);
+        };
     }
     void unhandled_exception() { std::rethrow_exception(std::current_exception()); }
 };
 
 template <>
 struct CppPromise<> {
+    struct FinalAwaiter {
+        bool await_ready() noexcept { return false; }
+
+        void await_suspend(std::coroutine_handle<CppPromise<>> h) noexcept { h.promise().promise.resolve(); }
+
+        void await_resume() noexcept {}
+    };
+
     Promise<> promise;
 
     CppPromise() = default;
@@ -244,7 +256,7 @@ struct CppPromise<> {
         return promise;
     }
     std::suspend_never initial_suspend() noexcept { return {}; }
-    std::suspend_always final_suspend() noexcept { return {}; }
+    FinalAwaiter final_suspend() noexcept { return {}; }
     void return_void() { promise.resolve(); }
     void unhandled_exception() { std::rethrow_exception(std::current_exception()); }
 };
@@ -267,15 +279,11 @@ struct CppAwaiter {
     std::tuple<Type...> await_resume()
         requires(count_v<Type...> > 1)
     {
-        std::unique_lock<std::mutex> lock(promise.context_->lock);
-
         return promise.context_->data.value();
     }
     first_t<Type...> await_resume()
         requires(count_v<Type...> == 1)
     {
-        std::unique_lock<std::mutex> lock(promise.context_->lock);
-
         return std::get<0>(promise.context_->data.value());
     }
 };
